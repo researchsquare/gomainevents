@@ -2,16 +2,20 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"time"
 
+	gorilla "github.com/gorilla/websocket"
 	"github.com/researchsquare/gomainevents"
 	"github.com/researchsquare/gomainevents/sns"
 	"github.com/researchsquare/gomainevents/sqs"
+	"github.com/researchsquare/gomainevents/websocket"
 )
 
 func main() {
-	runSNSExample()
-	runSQSExample()
+	// runSNSExample()
+	// runSQSExample()
+	// runWebsocketExample()
 }
 
 // SNS
@@ -48,4 +52,33 @@ func runSQSExample() {
 	})
 
 	listener.Listen()
+}
+
+// Websockets
+func runWebsocketExample() {
+	addr := "localhost:8994"
+
+	// Client
+	time.AfterFunc(time.Second*5, func() {
+		log.Println("connecting to", addr)
+		conn, _, _ := gorilla.DefaultDialer.Dial("ws://"+addr, nil)
+
+		go func() {
+			for {
+				_, message, _ := conn.ReadMessage()
+				log.Printf("client: %s", message)
+			}
+		}()
+	})
+
+	// Server
+	var upgrader = gorilla.Upgrader{}
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		conn, _ := upgrader.Upgrade(w, r, nil)
+
+		publisher := websocket.NewPublisher(conn)
+		publisher.Publish(&ExampleDomainEvent{})
+	})
+
+	log.Fatal(http.ListenAndServe(addr, nil))
 }
