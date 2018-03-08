@@ -33,7 +33,7 @@ func (e ExampleDomainEvent) Data() map[string]interface{} {
 
 func runSNSExample() {
 	publisher, _ := sns.NewPublisher(&sns.Config{
-		TopicARN: "arn:aws:sns:us-east-1:798502617683:domain-events-rnewton-development",
+		TopicARN: "arn:aws:sns:us-east-1:1234:domain-events-app-development",
 	})
 
 	publisher.Publish(&ExampleDomainEvent{})
@@ -42,7 +42,7 @@ func runSNSExample() {
 // SQS
 func runSQSExample() {
 	provider, _ := sqs.NewProvider(&sqs.Config{
-		QueueURL: "https://sqs.us-east-1.amazonaws.com/798502617683/domain-events-rnewton-megatron-development",
+		QueueURL: "https://sqs.us-east-1.amazonaws.com/1234/domain-events-app-development",
 	})
 	listener := gomainevents.NewListener(provider)
 
