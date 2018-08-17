@@ -1,6 +1,8 @@
 package gomainevents
 
-import "log"
+import (
+	"log"
+)
 
 // EventHandler is a function responsible for processing an event.
 // A specific event handler should be registered for each event type
@@ -30,6 +32,7 @@ type Listener struct {
 	provider Provider
 	handlers map[string][]EventHandler
 	done     chan bool
+	debug    bool
 }
 
 func NewListener(provider Provider) *Listener {
@@ -37,6 +40,7 @@ func NewListener(provider Provider) *Listener {
 		provider: provider,
 		handlers: make(map[string][]EventHandler),
 		done:     make(chan bool, 1),
+		debug:    true,
 	}
 }
 
@@ -47,38 +51,57 @@ func (l *Listener) RegisterHandler(name string, fn EventHandler) {
 func (l *Listener) Listen() {
 	// Initialize our provider
 	events, errors := l.provider.Start()
+	workers, max := 0, len(l.handlers)*4
+
+	l.debugPrint("Domain events processed using %d handlers\n", max)
 
 	// Start listening!
 	for {
 		select {
 		case <-l.done:
-			log.Printf("Halting...")
+			l.debugPrint("Halting...")
 			l.provider.Stop()
 			return
+		default:
+			if workers < max {
+				go func() {
+					defer func() { workers-- }()
+
+					workers++
+					l.worker(events, errors)
+				}()
+			}
+		}
+	}
+}
+
+func (l *Listener) worker(events <-chan Event, errors <-chan error) {
+	for {
+		select {
 		case err := <-errors:
-			log.Printf("Error: %s\n", err)
+			l.debugPrint("Error: %s\n", err)
 			return
 		case event, ok := <-events:
 			if !ok {
-				log.Printf("Event provider closed.\n")
+				l.debugPrint("Event provider closed.\n")
 				return
 			}
 
-			log.Printf("Received event: %s %+v\n", event.Name(), event.Data())
+			l.debugPrint("Received event: %s %+v\n", event.Name(), event.Data())
 
 			// Pass the event to a handler
 			if err := l.handleEvent(event); err != nil {
-				log.Printf("Error: %s\n", err)
+				l.debugPrint("Error: %s\n", err)
 
 				// We should attempt to requeue the event for later
 				l.provider.Requeue(event)
-				l.provider.Stop()
 
 				return
 			}
 
 			// If there were no errors, we're done with event. We can delete it.
 			l.provider.Delete(event)
+			l.debugPrint("Successfully processed.\n")
 		}
 	}
 }
@@ -86,7 +109,7 @@ func (l *Listener) Listen() {
 func (l *Listener) handleEvent(event Event) error {
 	handlers, ok := l.handlers[event.Name()]
 	if !ok {
-		log.Printf("No handler registered for event.\n")
+		l.debugPrint("No handler registered for event.\n")
 		return nil
 	}
 
@@ -97,4 +120,10 @@ func (l *Listener) handleEvent(event Event) error {
 	}
 
 	return nil
+}
+
+func (l *Listener) debugPrint(format string, values ...interface{}) {
+	if l.debug {
+		log.Printf("[gomainevents] "+format, values...)
+	}
 }
