@@ -18,6 +18,7 @@ type Provider struct {
 	events    chan gomainevents.Event
 	errors    chan error
 	done      chan bool
+	debug     bool
 }
 
 type Config struct {
@@ -53,6 +54,7 @@ func NewProvider(config *Config) (*Provider, error) {
 		events: make(chan gomainevents.Event, 100),
 		errors: make(chan error, 1),
 		done:   make(chan bool, 1),
+		debug:  true,
 	}, nil
 }
 
@@ -64,7 +66,7 @@ func (p *Provider) Start() (<-chan gomainevents.Event, <-chan error) {
 		MessageAttributeNames: aws.StringSlice([]string{"All"}),
 	}
 
-	log.Printf("Listening for events from %s\n", p.queueURL)
+	p.debugPrint("Listening for events from %s\n", p.queueURL)
 
 	// This goroutine is non-blocking due to the bufferred events channel
 	go func() {
@@ -152,4 +154,10 @@ func (p *Provider) updateVisibilityTimeout(receiptHandle string, newTimeout int6
 	_, err := p.sqsClient.ChangeMessageVisibility(params)
 
 	return err
+}
+
+func (p *Provider) debugPrint(format string, values ...interface{}) {
+	if p.debug {
+		log.Printf("[gomainevents-sqs] "+format, values...)
+	}
 }
