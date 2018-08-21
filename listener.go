@@ -78,9 +78,6 @@ func (l *Listener) Listen() {
 func (l *Listener) worker(events <-chan Event, errors <-chan error) {
 	for {
 		select {
-		case err := <-errors:
-			l.debugPrint("Error: %s\n", err)
-			return
 		case event, ok := <-events:
 			if !ok {
 				l.debugPrint("Event provider closed.\n")

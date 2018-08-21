@@ -87,7 +87,7 @@ func TestStart(t *testing.T) {
 		},
 	}
 
-	events, errors := provider.Start()
+	events, _ := provider.Start()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -95,8 +95,6 @@ func TestStart(t *testing.T) {
 	go func() {
 		for {
 			select {
-			case err := <-errors:
-				assert.Nil(t, err) // This should fail if we do get an error
 			case event := <-events:
 				assert.Equal(t, "Domain\\Event", event.Name())
 				wg.Done()

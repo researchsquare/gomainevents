@@ -75,19 +75,19 @@ func (p *Provider) Start() (<-chan gomainevents.Event, <-chan error) {
 			case <-p.done:
 				return
 			case err := <-p.errors:
-				log.Println(err)
+				p.debugPrint("Error: %s\n", err)
 			default:
 				resp, err := p.sqsClient.ReceiveMessage(params)
 				if err != nil {
 					p.errors <- err
-					return
+					continue
 				}
 
 				for _, msg := range resp.Messages {
 					event, err := DecodeEvent(p, msg)
 					if err != nil {
 						p.errors <- err
-						return
+						continue
 					}
 
 					p.events <- *event
@@ -119,19 +119,22 @@ func (p *Provider) Requeue(event gomainevents.Event) {
 
 	p.Delete(event)
 
+	retryCount := &awssqs.MessageAttributeValue{}
+	retryCount.SetStringValue(strconv.Itoa(evt.RetryCount() + 1))
+	retryCount.SetDataType("Number")
+
 	params := &awssqs.SendMessageInput{
-		QueueUrl:               aws.String(p.queueURL),
-		MessageDeduplicationId: evt.DeduplicationID(),
-		DelaySeconds:           aws.Int64(evt.DelaySeconds()),
-		MessageAttributes: map[string]*awssqs.MessageAttributeValue{
-			"RetryCount": &awssqs.MessageAttributeValue{
-				StringValue: aws.String(strconv.Itoa(evt.RetryCount() + 1)),
-				DataType:    aws.String("Number"),
-			},
-		},
-		MessageBody: aws.String(evt.EncodeEvent()),
+		QueueUrl:          aws.String(p.queueURL),
+		DelaySeconds:      aws.Int64(evt.DelaySeconds()),
+		MessageAttributes: map[string]*awssqs.MessageAttributeValue{"RetryCount": retryCount},
+		MessageBody:       aws.String(evt.EncodeEvent()),
 	}
 
+	if nil != evt.DeduplicationID() {
+		params.MessageDeduplicationId = evt.DeduplicationID()
+	}
+
+	p.debugPrint("Requeuing event. Retries: %d, Delay: %d\n", evt.RetryCount()+1, evt.DelaySeconds())
 	if _, err := p.sqsClient.SendMessage(params); err != nil {
 		p.errors <- err
 	}
