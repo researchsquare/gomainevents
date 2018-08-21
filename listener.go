@@ -53,6 +53,10 @@ func (l *Listener) Listen() {
 	events, errors := l.provider.Start()
 	workers, max := 0, len(l.handlers)*4
 
+	// Channel for notifying parent listener that a worker is done and needs
+	// to be restarted.
+	workerDone := make(chan bool, max)
+
 	l.debugPrint("Domain events processed using %d handlers\n", max)
 
 	// Start listening!
@@ -62,20 +66,20 @@ func (l *Listener) Listen() {
 			l.debugPrint("Halting...")
 			l.provider.Stop()
 			return
-		default:
+		case <-workerDone:
 			if workers < max {
 				go func() {
 					defer func() { workers-- }()
 
 					workers++
-					l.worker(events, errors)
+					l.worker(events, errors, workerDone)
 				}()
 			}
 		}
 	}
 }
 
-func (l *Listener) worker(events <-chan Event, errors <-chan error) {
+func (l *Listener) worker(events <-chan Event, errors <-chan error, workerDone chan bool) {
 	for {
 		select {
 		case event, ok := <-events:
@@ -92,6 +96,8 @@ func (l *Listener) worker(events <-chan Event, errors <-chan error) {
 
 				// We should attempt to requeue the event for later
 				l.provider.Requeue(event)
+
+				workerDone <- true
 
 				return
 			}
