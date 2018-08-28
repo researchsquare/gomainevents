@@ -59,6 +59,17 @@ func (l *Listener) Listen() {
 
 	l.debugPrint("Domain events processed using %d handlers\n", max)
 
+	// Start our workers
+	for i := 0; i < max; i++ {
+		go func() {
+			defer func() { workers-- }()
+
+			workers++
+			l.worker(events, errors, workerDone)
+			l.debugPrint("Worker closed\n")
+		}()
+	}
+
 	// Start listening!
 	for {
 		select {
@@ -68,6 +79,7 @@ func (l *Listener) Listen() {
 			return
 		case <-workerDone:
 			if workers < max {
+				l.debugPrint("Restarting worker...\n")
 				go func() {
 					defer func() { workers-- }()
 
@@ -77,6 +89,8 @@ func (l *Listener) Listen() {
 			}
 		}
 	}
+
+	l.debugPrint("finished\n")
 }
 
 func (l *Listener) worker(events <-chan Event, errors <-chan error, workerDone chan bool) {
