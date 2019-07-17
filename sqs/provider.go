@@ -2,6 +2,7 @@ package sqs
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"strconv"
 
@@ -38,7 +39,7 @@ func NewProvider(config *Config) (*Provider, error) {
 	if nil == config {
 		return nil, errors.New("Configuration is required")
 	}
-	
+
 	// Default to a new client using shared credentials
 	sqsClient := config.SQSClient
 	if nil == sqsClient {
@@ -50,7 +51,7 @@ func NewProvider(config *Config) (*Provider, error) {
 		return nil, errors.New("QueueURL is required")
 	}
 
-	maximumRetryCount := 25
+	maximumRetryCount := 3
 	if config.MaximumRetryCount > 0 {
 		maximumRetryCount = config.MaximumRetryCount
 	}
@@ -60,10 +61,10 @@ func NewProvider(config *Config) (*Provider, error) {
 		queueURL:  config.QueueURL,
 
 		// Buffered channel makes it so that the listener will block while the channel is empty.
-		events: make(chan gomainevents.Event, 100),
-		errors: make(chan error, 1),
-		done:   make(chan bool, 1),
-		debug:  true,
+		events:            make(chan gomainevents.Event, 100),
+		errors:            make(chan error, 1),
+		done:              make(chan bool, 1),
+		debug:             true,
 		maximumRetryCount: maximumRetryCount,
 	}, nil
 }
@@ -123,13 +124,15 @@ func (p *Provider) Delete(event gomainevents.Event) {
 	}
 }
 
-func (p *Provider) MaximumRetryCount() int {
-	return p.maximumRetryCount
-}
-
 // Requeue an event for later
-func (p *Provider) Requeue(event gomainevents.Event) {
+func (p *Provider) Requeue(event gomainevents.Event) error {
 	evt := event.(Event) // Cast to SQS flavor
+
+	// Make sure we can requeue this event
+	p.debugPrint("Try #%d\n", evt.RetryCount())
+	if evt.RetryCount() > p.maximumRetryCount {
+		return fmt.Errorf("Event exceeded maximum retry count: %s\n", evt.EncodeEvent())
+	}
 
 	p.Delete(event)
 
@@ -152,6 +155,8 @@ func (p *Provider) Requeue(event gomainevents.Event) {
 	if _, err := p.sqsClient.SendMessage(params); err != nil {
 		p.errors <- err
 	}
+
+	return nil
 }
 
 // Stop the channel
