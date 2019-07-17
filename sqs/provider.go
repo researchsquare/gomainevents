@@ -13,6 +13,8 @@ import (
 	"github.com/researchsquare/gomainevents"
 )
 
+const defaultMaximumRetryCount = 25
+
 type Provider struct {
 	sqsClient         sqsiface.SQSAPI
 	queueURL          string
@@ -51,7 +53,7 @@ func NewProvider(config *Config) (*Provider, error) {
 		return nil, errors.New("QueueURL is required")
 	}
 
-	maximumRetryCount := 3
+	maximumRetryCount := defaultMaximumRetryCount
 	if config.MaximumRetryCount > 0 {
 		maximumRetryCount = config.MaximumRetryCount
 	}
@@ -129,7 +131,6 @@ func (p *Provider) Requeue(event gomainevents.Event) error {
 	evt := event.(Event) // Cast to SQS flavor
 
 	// Make sure we can requeue this event
-	p.debugPrint("Try #%d\n", evt.RetryCount())
 	if evt.RetryCount() > p.maximumRetryCount {
 		return fmt.Errorf("Event exceeded maximum retry count: %s\n", evt.EncodeEvent())
 	}
