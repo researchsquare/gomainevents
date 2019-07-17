@@ -13,12 +13,13 @@ import (
 )
 
 type Provider struct {
-	sqsClient sqsiface.SQSAPI
-	queueURL  string
-	events    chan gomainevents.Event
-	errors    chan error
-	done      chan bool
-	debug     bool
+	sqsClient         sqsiface.SQSAPI
+	queueURL          string
+	events            chan gomainevents.Event
+	errors            chan error
+	done              chan bool
+	debug             bool
+	maximumRetryCount int
 }
 
 type Config struct {
@@ -28,13 +29,16 @@ type Config struct {
 
 	// Specify the Queue URL. Required
 	QueueURL string
+
+	// This specifies the maximum number of times an event should be retried
+	MaximumRetryCount int
 }
 
 func NewProvider(config *Config) (*Provider, error) {
 	if nil == config {
 		return nil, errors.New("Configuration is required")
 	}
-
+	
 	// Default to a new client using shared credentials
 	sqsClient := config.SQSClient
 	if nil == sqsClient {
@@ -46,6 +50,11 @@ func NewProvider(config *Config) (*Provider, error) {
 		return nil, errors.New("QueueURL is required")
 	}
 
+	maximumRetryCount := 25
+	if config.MaximumRetryCount > 0 {
+		maximumRetryCount = config.MaximumRetryCount
+	}
+
 	return &Provider{
 		sqsClient: sqsClient,
 		queueURL:  config.QueueURL,
@@ -55,6 +64,7 @@ func NewProvider(config *Config) (*Provider, error) {
 		errors: make(chan error, 1),
 		done:   make(chan bool, 1),
 		debug:  true,
+		maximumRetryCount: maximumRetryCount,
 	}, nil
 }
 
@@ -111,6 +121,10 @@ func (p *Provider) Delete(event gomainevents.Event) {
 	if _, err := p.sqsClient.DeleteMessage(params); err != nil {
 		p.errors <- err
 	}
+}
+
+func (p *Provider) MaximumRetryCount() int {
+	return p.maximumRetryCount
 }
 
 // Requeue an event for later

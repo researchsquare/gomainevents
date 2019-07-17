@@ -1,6 +1,7 @@
 package gomainevents
 
 import (
+	"fmt"
 	"log"
 )
 
@@ -8,6 +9,9 @@ import (
 // A specific event handler should be registered for each event type
 // although multiple can be registered for a single event.
 type EventHandler func(Event) error
+
+// ErrorHandler is responsible for passing errors back to the calling code
+type ErrorHandler func(error)
 
 // Provider is an interface for a source of events. The provider
 // accumulates events and emits them via a channel for the Listener.
@@ -24,6 +28,9 @@ type Provider interface {
 
 	// Stop the channel
 	Stop()
+
+	// Return the maximum retry count for the provider
+	MaximumRetryCount() int
 }
 
 // Listener receives events and passes them to the registered event
@@ -33,6 +40,7 @@ type Listener struct {
 	handlers map[string][]EventHandler
 	done     chan bool
 	debug    bool
+	errorHandler *ErrorHandler
 }
 
 func NewListener(provider Provider) *Listener {
@@ -46,6 +54,10 @@ func NewListener(provider Provider) *Listener {
 
 func (l *Listener) RegisterHandler(name string, fn EventHandler) {
 	l.handlers[name] = append(l.handlers[name], fn)
+}
+
+func (l *Listener) RegisterErrorHandler(fn ErrorHandler) {
+	l.errorHandler = ErrorHandler
 }
 
 func (l *Listener) Listen() {
@@ -107,9 +119,13 @@ func (l *Listener) worker(events <-chan Event, errors <-chan error, workerDone c
 			// Pass the event to a handler
 			if err := l.handleEvent(event); err != nil {
 				l.debugPrint("Error: %s\n", err)
-
-				// We should attempt to requeue the event for later
-				l.provider.Requeue(event)
+				
+				if (event.RetryCount() <= l.provider.MaximumRetryCount()) {
+					// We should attempt to requeue the event for later
+					l.provider.Requeue(event)
+				} else {
+					l.errorHandler(fmt.Errorf("Event exceeded maximum retry count: %s\n", event.EncodeEvent()))
+				}
 
 				workerDone <- true
 
