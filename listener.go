@@ -23,7 +23,7 @@ type Provider interface {
 	Delete(Event)
 
 	// Requeue an event for later
-	Requeue(Event) error
+	Requeue(Event) RequeuingEventFailedError
 
 	// Stop the channel
 	Stop()
@@ -123,10 +123,7 @@ func (l *Listener) worker(events <-chan Event, errors <-chan error, workerDone c
 
 				err := l.provider.Requeue(event)
 				if err != nil && l.errorHandler != nil {
-					switch err.(type) {
-						case RequeuingEventFailedError:
-							l.errorHandler(err)
-					}
+					l.errorHandler(err)
 				}
 
 				workerDone <- true

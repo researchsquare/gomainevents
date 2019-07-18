@@ -126,7 +126,7 @@ func (p *Provider) Delete(event gomainevents.Event) {
 }
 
 // Requeue an event for later
-func (p *Provider) Requeue(event gomainevents.Event) error {
+func (p *Provider) Requeue(event gomainevents.Event) gomainevents.RequeuingEventFailedError {
 	evt := event.(Event) // Cast to SQS flavor
 
 	if evt.RetryCount() > p.maximumRetryCount {
