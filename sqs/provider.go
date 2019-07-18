@@ -1,6 +1,7 @@
 package sqs
 
 import (
+	"fmt"
 	"errors"
 	"log"
 	"strconv"
@@ -36,6 +37,16 @@ type Config struct {
 	MaximumRetryCount int
 }
 
+type RetryAttemptsExceededError struct {
+	error
+	gomainevents.RequeuingEventFailedError
+	EventName string
+}
+
+func (e *RetryAttemptsExceededError) Error() string {
+	return fmt.Sprintf("Event exceeded maximum retry count: %s", e.EventName)
+}
+
 func NewProvider(config *Config) (*Provider, error) {
 	if nil == config {
 		return nil, errors.New("Configuration is required")
@@ -56,7 +67,7 @@ func NewProvider(config *Config) (*Provider, error) {
 	if config.MaximumRetryCount > 0 {
 		maximumRetryCount = config.MaximumRetryCount
 	}
-
+	maximumRetryCount = 3
 	return &Provider{
 		sqsClient: sqsClient,
 		queueURL:  config.QueueURL,
@@ -125,15 +136,13 @@ func (p *Provider) Delete(event gomainevents.Event) {
 	}
 }
 
-func (p *Provider) CanRequeueEvent(event gomainevents.Event) bool {
-	evt := event.(Event) // Cast to SQS flavor
-
-	return evt.RetryCount() <= p.maximumRetryCount
-}
-
 // Requeue an event for later
-func (p *Provider) Requeue(event gomainevents.Event) {
+func (p *Provider) Requeue(event gomainevents.Event) error {
 	evt := event.(Event) // Cast to SQS flavor
+
+	if evt.RetryCount() > p.maximumRetryCount {
+		return &RetryAttemptsExceededError{EventName: evt.Name()}
+	}
 
 	p.Delete(event)
 
@@ -156,6 +165,8 @@ func (p *Provider) Requeue(event gomainevents.Event) {
 	if _, err := p.sqsClient.SendMessage(params); err != nil {
 		p.errors <- err
 	}
+
+	return nil
 }
 
 // Stop the channel
