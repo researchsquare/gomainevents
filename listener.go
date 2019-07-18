@@ -29,6 +29,7 @@ type Provider interface {
 	Stop()
 }
 
+// RequeuingEventFailedError represents an error where requeueing has failed
 type RequeuingEventFailedError interface {
 	Error() string
 }
