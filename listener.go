@@ -1,6 +1,7 @@
 package gomainevents
 
 import (
+	"fmt"
 	"log"
 )
 
@@ -23,7 +24,10 @@ type Provider interface {
 	Delete(Event)
 
 	// Requeue an event for later
-	Requeue(Event) error
+	Requeue(Event)
+
+	// CanRequeueEvent determines if an event can be requeued
+	CanRequeueEvent(Event) bool
 
 	// Stop the channel
 	Stop()
@@ -116,10 +120,11 @@ func (l *Listener) worker(events <-chan Event, errors <-chan error, workerDone c
 			if err := l.handleEvent(event); err != nil {
 				l.debugPrint("Error: %s\n", err)
 
-				err := l.provider.Requeue(event)
-				if err != nil {
+				if l.provider.CanRequeueEvent(event) {
+					l.provider.Requeue(event)
+				} else {
 					if l.errorHandler != nil {
-						l.errorHandler(err)
+						l.errorHandler(fmt.Errorf("Event exceeded maximum retry count: %s", event.Name()))
 					}
 				}
 

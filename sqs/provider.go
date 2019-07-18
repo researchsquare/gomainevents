@@ -2,7 +2,6 @@ package sqs
 
 import (
 	"errors"
-	"fmt"
 	"log"
 	"strconv"
 
@@ -126,14 +125,15 @@ func (p *Provider) Delete(event gomainevents.Event) {
 	}
 }
 
-// Requeue an event for later
-func (p *Provider) Requeue(event gomainevents.Event) error {
+func (p *Provider) CanRequeueEvent(event gomainevents.Event) bool {
 	evt := event.(Event) // Cast to SQS flavor
 
-	// Make sure we can requeue this event
-	if evt.RetryCount() > p.maximumRetryCount {
-		return fmt.Errorf("Event exceeded maximum retry count: %s\n", evt.EncodeEvent())
-	}
+	return evt.RetryCount() <= p.maximumRetryCount
+}
+
+// Requeue an event for later
+func (p *Provider) Requeue(event gomainevents.Event) {
+	evt := event.(Event) // Cast to SQS flavor
 
 	p.Delete(event)
 
@@ -156,8 +156,6 @@ func (p *Provider) Requeue(event gomainevents.Event) error {
 	if _, err := p.sqsClient.SendMessage(params); err != nil {
 		p.errors <- err
 	}
-
-	return nil
 }
 
 // Stop the channel
