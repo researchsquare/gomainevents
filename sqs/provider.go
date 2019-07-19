@@ -12,13 +12,16 @@ import (
 	"github.com/researchsquare/gomainevents"
 )
 
+const defaultMaximumRetryCount = 25
+
 type Provider struct {
-	sqsClient sqsiface.SQSAPI
-	queueURL  string
-	events    chan gomainevents.Event
-	errors    chan error
-	done      chan bool
-	debug     bool
+	sqsClient         sqsiface.SQSAPI
+	queueURL          string
+	events            chan gomainevents.Event
+	errors            chan error
+	done              chan bool
+	debug             bool
+	maximumRetryCount int
 }
 
 type Config struct {
@@ -28,6 +31,9 @@ type Config struct {
 
 	// Specify the Queue URL. Required
 	QueueURL string
+
+	// This specifies the maximum number of times an event should be retried
+	MaximumRetryCount int
 }
 
 func NewProvider(config *Config) (*Provider, error) {
@@ -46,15 +52,21 @@ func NewProvider(config *Config) (*Provider, error) {
 		return nil, errors.New("QueueURL is required")
 	}
 
+	maximumRetryCount := defaultMaximumRetryCount
+	if config.MaximumRetryCount > 0 {
+		maximumRetryCount = config.MaximumRetryCount
+	}
+
 	return &Provider{
 		sqsClient: sqsClient,
 		queueURL:  config.QueueURL,
 
 		// Buffered channel makes it so that the listener will block while the channel is empty.
-		events: make(chan gomainevents.Event, 100),
-		errors: make(chan error, 1),
-		done:   make(chan bool, 1),
-		debug:  true,
+		events:            make(chan gomainevents.Event, 100),
+		errors:            make(chan error, 1),
+		done:              make(chan bool, 1),
+		debug:             true,
+		maximumRetryCount: maximumRetryCount,
 	}, nil
 }
 
@@ -114,8 +126,12 @@ func (p *Provider) Delete(event gomainevents.Event) {
 }
 
 // Requeue an event for later
-func (p *Provider) Requeue(event gomainevents.Event) {
+func (p *Provider) Requeue(event gomainevents.Event) gomainevents.RequeuingEventFailedError {
 	evt := event.(Event) // Cast to SQS flavor
+
+	if evt.RetryCount() > p.maximumRetryCount {
+		return &RetryAttemptsExceededError{EventName: evt.Name()}
+	}
 
 	p.Delete(event)
 
@@ -138,6 +154,8 @@ func (p *Provider) Requeue(event gomainevents.Event) {
 	if _, err := p.sqsClient.SendMessage(params); err != nil {
 		p.errors <- err
 	}
+
+	return nil
 }
 
 // Stop the channel

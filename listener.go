@@ -9,6 +9,9 @@ import (
 // although multiple can be registered for a single event.
 type EventHandler func(Event) error
 
+// ErrorHandler is responsible for passing errors back to the calling code
+type ErrorHandler func(error)
+
 // Provider is an interface for a source of events. The provider
 // accumulates events and emits them via a channel for the Listener.
 // The channel should be held open for as long as Listener is listening.
@@ -20,19 +23,25 @@ type Provider interface {
 	Delete(Event)
 
 	// Requeue an event for later
-	Requeue(Event)
+	Requeue(Event) RequeuingEventFailedError
 
 	// Stop the channel
 	Stop()
 }
 
+// RequeuingEventFailedError represents an error where requeueing has failed
+type RequeuingEventFailedError interface {
+	Error() string
+}
+
 // Listener receives events and passes them to the registered event
 // handlers. The events are provided by a Provider via a channel.
 type Listener struct {
-	provider Provider
-	handlers map[string][]EventHandler
-	done     chan bool
-	debug    bool
+	provider     Provider
+	handlers     map[string][]EventHandler
+	done         chan bool
+	debug        bool
+	errorHandler ErrorHandler
 }
 
 func NewListener(provider Provider) *Listener {
@@ -46,6 +55,10 @@ func NewListener(provider Provider) *Listener {
 
 func (l *Listener) RegisterHandler(name string, fn EventHandler) {
 	l.handlers[name] = append(l.handlers[name], fn)
+}
+
+func (l *Listener) RegisterErrorHandler(fn ErrorHandler) {
+	l.errorHandler = fn
 }
 
 func (l *Listener) Listen() {
@@ -108,8 +121,10 @@ func (l *Listener) worker(events <-chan Event, errors <-chan error, workerDone c
 			if err := l.handleEvent(event); err != nil {
 				l.debugPrint("Error: %s\n", err)
 
-				// We should attempt to requeue the event for later
-				l.provider.Requeue(event)
+				err := l.provider.Requeue(event)
+				if err != nil && l.errorHandler != nil {
+					l.errorHandler(err)
+				}
 
 				workerDone <- true
 
