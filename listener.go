@@ -120,9 +120,6 @@ func (l *Listener) worker(events <-chan Event, errors <-chan error, workerDone c
 			// Pass the event to a handler
 			if err := l.handleEvent(event); err != nil {
 				l.debugPrint("Error: %s\n", err)
-				if l.errorHandler != nil {
-					l.errorHandler(err)
-				}
 
 				requeueError := l.provider.Requeue(event)
 				if requeueError != nil && l.errorHandler != nil {
