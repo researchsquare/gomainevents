@@ -124,8 +124,9 @@ func (l *Listener) worker(events <-chan Event, errors <-chan error, workerDone c
 					l.errorHandler(err)
 				}
 
-				err := l.provider.Requeue(event)
-				if err != nil && l.errorHandler != nil {
+				requeueError := l.provider.Requeue(event)
+				if requeueError != nil && l.errorHandler != nil {
+					l.errorHandler(requeueError)
 					l.errorHandler(err)
 				}
 
